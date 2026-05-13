@@ -7,9 +7,11 @@ export function useSSE(restaurantId, eventHandlers) {
   const reconnectTimeoutRef = useRef(null)
   const reconnectAttempts = useRef(0)
   const handlersRef = useRef(eventHandlers)
+  const isMountedRef = useRef(true)
   const MAX_RECONNECT_ATTEMPTS = 5
+  const BASE_DELAY = 3000 // start at 3 seconds not 1 second
 
-  // Keep handlers ref always up to date without causing reconnect
+  // Keep handlers ref always up to date
   useEffect(() => {
     handlersRef.current = eventHandlers
   })
@@ -17,25 +19,52 @@ export function useSSE(restaurantId, eventHandlers) {
   useEffect(() => {
     if (!restaurantId) return
 
+    isMountedRef.current = true
+
     function connect() {
+      // Stop if component unmounted
+      if (!isMountedRef.current) return
+
+      // Stop if max attempts reached
+      if (reconnectAttempts.current >= MAX_RECONNECT_ATTEMPTS) {
+        console.log("SSE max reconnect attempts reached — stopped")
+        return
+      }
+
+      // Close existing connection first
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close()
+        eventSourceRef.current = null
+      }
+
       const url = `/api/orders/stream?restaurantId=${restaurantId}`
-      const eventSource = new EventSource(url)
-      eventSourceRef.current = eventSource
+
+      let eventSource
+      try {
+        eventSource = new EventSource(url)
+        eventSourceRef.current = eventSource
+      } catch (err) {
+        console.error("SSE failed to create EventSource:", err)
+        return
+      }
 
       eventSource.onopen = () => {
-        console.log("✅ SSE connected for restaurant:", restaurantId)
+        if (!isMountedRef.current) return
+        console.log("✅ SSE connected")
         reconnectAttempts.current = 0
       }
 
-      // Fixed list of known event names — avoids dynamic addEventListener
-      // which caused the "useEffect size changed" warning
-      const knownEvents = ["new_order", "order_status_update", "connected", "ping",]
+      const knownEvents = [
+        "new_order",
+        "order_status_update",
+        "connected",
+      ]
 
       knownEvents.forEach((eventName) => {
         eventSource.addEventListener(eventName, (e) => {
+          if (!isMountedRef.current) return
           try {
             const data = JSON.parse(e.data)
-            // Always read from ref so we get latest handler
             const handler = handlersRef.current[eventName]
             if (handler) handler(data)
           } catch (err) {
@@ -45,22 +74,26 @@ export function useSSE(restaurantId, eventHandlers) {
       })
 
       eventSource.onerror = () => {
-        console.log("SSE error — closing connection")
+        if (!isMountedRef.current) return
+
         eventSource.close()
         eventSourceRef.current = null
 
         if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
+          // Exponential backoff starting at 3s
+          // 3s, 6s, 12s, 24s, 48s
           const delay = Math.min(
-            1000 * Math.pow(2, reconnectAttempts.current),
-            30000
+            BASE_DELAY * Math.pow(2, reconnectAttempts.current),
+            60000 // max 60 seconds
           )
           reconnectAttempts.current += 1
           console.log(
-            `SSE reconnecting in ${delay}ms (attempt ${reconnectAttempts.current})`
+            `SSE reconnecting in ${delay / 1000}s ` +
+            `(attempt ${reconnectAttempts.current}/${MAX_RECONNECT_ATTEMPTS})`
           )
           reconnectTimeoutRef.current = setTimeout(connect, delay)
         } else {
-          console.log("SSE max reconnect attempts reached")
+          console.log("SSE stopped — too many failures")
         }
       }
     }
@@ -68,8 +101,10 @@ export function useSSE(restaurantId, eventHandlers) {
     connect()
 
     return () => {
+      isMountedRef.current = false
       eventSourceRef.current?.close()
+      eventSourceRef.current = null
       clearTimeout(reconnectTimeoutRef.current)
     }
-  }, [restaurantId]) // ← only restaurantId, never the handlers object
+  }, [restaurantId])
 }
