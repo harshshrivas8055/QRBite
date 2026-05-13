@@ -1,3 +1,10 @@
+#for developer only 
+git add .
+git commit -m "updated"
+
+git push origin main
+git push friend main
+
 # 🍽️ QRBite — Restaurant QR Ordering SaaS
 
 A full-stack SaaS application that replaces manual order-taking in restaurants
