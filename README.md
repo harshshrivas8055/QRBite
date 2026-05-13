@@ -1,4 +1,4 @@
-#for developer only 
+#for developer of qrbite
 git add .
 git commit -m "updated"
 
