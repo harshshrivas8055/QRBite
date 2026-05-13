@@ -7,6 +7,7 @@ export async function proxy(req) {
   const token = await getToken({
     req,
     secret: process.env.AUTH_SECRET,
+    secureCookie: process.env.NODE_ENV === "production",
   })
 
   const isLoggedIn = !!token
@@ -30,7 +31,7 @@ export async function proxy(req) {
   // Redirect logged-in users away from auth pages
   if (isLoggedIn && isAuthPage) {
     const destination =
-      token.role === "SUPER_ADMIN"
+      token?.role === "SUPER_ADMIN"
         ? "/super-admin"
         : "/dashboard"
 
@@ -48,7 +49,7 @@ export async function proxy(req) {
       return NextResponse.redirect(new URL("/login", nextUrl))
     }
 
-    if (token.role !== "SUPER_ADMIN") {
+    if (token?.role !== "SUPER_ADMIN") {
       return NextResponse.redirect(new URL("/dashboard", nextUrl))
     }
   }
