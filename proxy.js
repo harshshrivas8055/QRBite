@@ -3,10 +3,12 @@ import { NextResponse } from "next/server"
 
 export async function proxy(req) {
   const { nextUrl } = req
+
   const token = await getToken({
     req,
     secret: process.env.AUTH_SECRET,
   })
+
   const isLoggedIn = !!token
 
   const isDashboard =
@@ -19,26 +21,28 @@ export async function proxy(req) {
     nextUrl.pathname.startsWith("/stats") ||
     nextUrl.pathname.startsWith("/kitchen")
 
-  const isKitchen = nextUrl.pathname.startsWith("/kitchen")
   const isSuperAdmin = nextUrl.pathname.startsWith("/super-admin")
+
   const isAuthPage =
     nextUrl.pathname.startsWith("/login") ||
     nextUrl.pathname.startsWith("/register")
 
+  // Redirect logged-in users away from auth pages
   if (isLoggedIn && isAuthPage) {
     const destination =
-      token.role === "SUPER_ADMIN" ? "/super-admin" : "/dashboard"
+      token.role === "SUPER_ADMIN"
+        ? "/super-admin"
+        : "/dashboard"
+
     return NextResponse.redirect(new URL(destination, nextUrl))
   }
 
+  // Protect dashboard routes
   if (!isLoggedIn && isDashboard) {
     return NextResponse.redirect(new URL("/login", nextUrl))
   }
 
-  if (!isLoggedIn && isKitchen) {
-    return NextResponse.redirect(new URL("/login", nextUrl))
-  }
-
+  // Protect super admin routes
   if (isSuperAdmin) {
     if (!isLoggedIn) {
       return NextResponse.redirect(new URL("/login", nextUrl))
